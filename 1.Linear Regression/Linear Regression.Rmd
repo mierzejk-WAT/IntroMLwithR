@@ -1,0 +1,535 @@
+---
+title: "Linear Regression"
+author: "Krzysztof Mierzejewski"
+date: "01-04-2018"
+output:
+  html_notebook:
+    self_contained: true
+    code_folding: show
+    df_print: paged
+    number_sections: true
+    toc: true
+    toc_depth: 2
+    toc_float:
+      collapsed: true
+      smooth_scroll: true
+---
+# Wczytanie i przygotowanie danych
+## Wczytanie zbioru danych z pliku płaskiego
+```{r}
+autodane<-read.table("/usr/miswdm/autodane.csv", header = TRUE, sep = ",", dec = ".")
+```
+```{r echo=FALSE}
+print(autodane)
+```
+## Zmienne pomocnicze
+```{r}
+p<-2                # liczba predyktorów
+no<-nrow(autodane)
+indices<-seq(no)
+df<-no-p-1          # liczba stopni swobody
+```
+## Zmienne egzogeniczne
+```{r}
+wiek<-autodane$Wiek
+przebieg<-autodane$Przebieg
+```
+## Zmienna endogeniczna
+```{r}
+cena<-autodane$Cena
+```
+## Nowa obserwacja
+Do prognozowania ceny.
+```{r}
+new.car<-data.frame(wiek=4, przebieg=145)
+```
+# Obliczanie kowariancji
+Kowariancja – miara wielkości zależności liniowej pomiędzy zmiennymi losowymi:
+$\begin{aligned}
+Cov(X, Y)=\mathbb{E}[(X-\mathbb{E}[X])\cdot(Y-\mathbb{E}[Y])]=\mathbb{E}[XY]-\mathbb{E}[X]\cdot\mathbb{E}[Y]
+\end{aligned}$
+
+## Wariancja wieku
+$\begin{aligned}
+Var(X)=\mathbb{E}[(X-\mathbb{E}[X])^2]=\mathbb{E}[X^2]-{\mathbb{E}[X]}^2
+\end{aligned}$
+
+Zgodny, nieobciążony estymator z próbki:  
+$\begin{aligned}
+Var(X)=\frac{1}{n-1}\sum_{i=1}^n(x_i-\bar{x})^2
+\end{aligned}$
+```{r}
+wiek.mean<-sum(wiek)/no
+wiek.diff<-wiek-wiek.mean
+wiek.diff.power<-wiek.diff^2
+var.wiek<-sum(wiek.diff.power)/(no-1)
+```
+```{r echo=FALSE}
+print(var.wiek)
+```
+## Wariancja przebiegu
+Zgodny, nieobciążony estymator z próbki.
+```{r}
+przebieg.mean<-sum(przebieg)/no
+przebieg.diff<-przebieg-przebieg.mean
+przebieg.diff.power<-przebieg.diff^2
+var.przebieg<-sum(przebieg.diff.power)/(no-1)
+```
+```{r echo=FALSE}
+print(var.przebieg)
+```
+## Kowariancja zmiennych egzogenicznych
+Zgodny, nieobciążony estymator z próbki:  
+$\begin{aligned}
+Cov(X, Y)=\frac{1}{n-1}\sum_{i=1}^n(x_i-\bar{x})\cdot(y_i-\bar{y})
+\end{aligned}$
+```{r}
+x.mult<-wiek.diff*przebieg.diff
+cov.x<-sum(x.mult)/(no-1)
+```
+```{r echo=FALSE}
+print(cov.x)
+```
+Obliczenia pomocnicze.
+```{r}
+cena.mean<-sum(cena)/no
+cena.diff<-cena-cena.mean
+wiek.cena.mult<-wiek.diff*cena.diff
+przebieg.cena.mult<-przebieg.diff*cena.diff
+```
+Kowariancja wieku i ceny.
+```{r}
+cov.wiek.cena<-sum(wiek.cena.mult)/(no-1)
+```
+```{r echo=FALSE}
+print(cov.wiek.cena)
+```
+Kowariancja przebiegu i ceny.
+```{r}
+cov.przebieg.cena<-sum(przebieg.cena.mult)/(no-1)
+```
+```{r echo=FALSE}
+print(cov.przebieg.cena)
+```
+# Wyznaczanie wartości współczynników modelu
+## Macierz kowariancji zmiennych niezależnych
+```{r}
+A<-matrix(c(var.wiek, cov.x, cov.x, var.przebieg), nrow=p)
+dimnames(A)<-list(c('wiek', 'przebieg'), c('wiek', 'przebieg'))
+```
+Alternatywnie.
+```{r eval=FALSE}
+A<-cov(cbind(wiek, przebieg))
+```
+```{r echo=FALSE}
+print(A)
+```
+## Wektor kowariancji wartości zmiennych niezależnych i zmiennych zależnych (obserwacji)
+```{r}
+B<-c(cov.wiek.cena, cov.przebieg.cena)
+```
+Alternatywnie.
+```{r eval=FALSE}
+B<-cov(cbind(wiek, przebieg), cena)
+```
+```{r echo=FALSE}
+print(B)
+```
+## Układ równań liniowych
+`r var.wiek` \* B~1~ + `r cov.x` \* B~2~ = `r cov.wiek.cena`  
+`r cov.x` \* B~1~ + `r var.przebieg` \* B~2~ = `r cov.przebieg.cena`
+
+Rozwiązanie układu.
+```{r}
+coef<-solve(A, B)
+B1<-coef[1]; B2<-coef[2]
+```
+```{r echo=FALSE}
+paste(B1, B2, sep = '; ')
+```
+## Wartość wyrazu wolnego B~0~
+Obliczenia pomocnicze.
+```{r}
+aux<-B1*wiek+B2*przebieg
+aux.numerator<-cena-aux
+```
+Wartość wyrazu wolnego B~0~.
+```{r}
+B0<-sum(aux.numerator)/no
+```
+Alternatywnie
+```{r eval=FALSE}
+B0<-mean(cena-as.matrix(cbind(wiek, przebieg)) %*% coef)
+```
+```{r echo=FALSE}
+print(B0)
+```
+# Model regresji liniowej
+## Funkcja prognozy wartości zmiennej zależnej
+```{r}
+est.fnc<-function(a, b) B0+B1*a+B2*b
+```
+Cena = `r B0` `r ifelse(B1 < 0, '-', '+')` `r abs(B1)` \* Wiek `r ifelse(B2 < 0, '-', '+')` `r abs(B2)` \* Przebieg
+
+## Prognozowana cena nowej obserwacji
+```{r}
+result<-est.fnc(new.car$wiek, new.car$przebieg)[[1]]
+```
+```{r echo=FALSE}
+print(result)
+```
+## Wariancja resztowa
+Obliczenia pomocnicze.
+```{r}
+cena.est<-est.fnc(wiek, przebieg)
+cena.est.diff<-cena-cena.est
+cena.est.diff.power<-cena.est.diff^2
+```
+Suma kwadratów resztowych (suma kwadratów błędów).
+```{r}
+RSS<-sum(cena.est.diff.power)
+```
+```{r echo=FALSE}
+print(RSS)
+```
+Nieobciążony estymator wariancji błędu obserwacji $\sigma^2$:  
+$\begin{aligned}
+S^2=\frac{\sum_{i=1}^n(y_i-\hat{y_i})^2}{df}=\frac{\sum_{i=1}^n(y_i-\hat{y_i})^2}{n-k}=\frac{RSS}{n-p-1}={RSE}^2
+\end{aligned}$  
+$df$ - liczba stopni swobody  
+$n$ - liczba obserwacji  
+$k$ - liczba estymowanych parametrów; $k=p+1$
+```{r}
+S2<-RSS/df
+```
+```{r echo=FALSE}
+print(S2)
+```
+# Dopasowanie modelu
+## Współczynnik R^2^
+Całkowita suma kwadratów.
+```{r}
+cena.diff.power<-cena.diff^2
+TSS<-sum(cena.diff.power)
+```
+```{r echo=FALSE}
+print(TSS)
+```
+$\begin{aligned}
+R^2=\frac{Regresyjna\ suma\ kwadratów}{Całkowita\ suma\ kwadratów}
+\end{aligned}$
+```{r}
+R2<-(TSS-RSS)/TSS
+```
+```{r echo=FALSE}
+print(R2)
+```
+## Współczynnik R^2^ dopasowany
+```{r}
+R2.adj<-1-(1-R2)*(no-1)/df
+```
+```{r echo=FALSE}
+print(R2.adj)
+```
+## Statystyka F
+```{r}
+F<-df*(TSS-RSS)/(p*RSS)
+F.pValue<-pf(F, p, df, lower.tail=FALSE)
+```
+```{r echo=FALSE}
+print(F.pValue)
+```
+## Test t-Studenta
+### Macierz zmiennych niezależnych
+Pierwszą kolumną jest wartość `1` dla wyznaczenia wartości błędu parametru wyrazu wolnego.
+```{r}
+X<-as.matrix(cbind(rep(1, no), wiek, przebieg))
+```
+### Estymator macierzy kowariancji estymatora metody najmniejszych kwadratów
+Macierz kowariancji parametrów modelu.
+```{r}
+Sigma<-S2*solve(t(X)%*%X)  #to samo co Sigma<-S2*solve(t(X)%*%X, diag(2))
+colnames(Sigma)[1]<-rownames(Sigma)[1]<-'Intercept'
+```
+### Błędy współczynników
+Błąd współczynnika B~0~.
+```{r}
+B0.err<-sqrt(diag(Sigma)['Intercept'])  # to samo co B0.err<-sqrt(Sigma[1,1])
+```
+```{r echo=FALSE}
+print(B0.err)
+```
+Błąd współczynnika B~1~.
+```{r}
+B1.err<-sqrt(diag(Sigma)['wiek'])       # to samo co B1.err<-sqrt(Sigma[2,2])
+```
+```{r echo=FALSE}
+print(B1.err)
+```
+Błąd współczynnika B~2~.
+```{r}
+B2.err<-sqrt(diag(Sigma)['przebieg'])   # to samo co B2.err<-sqrt(Sigma[3,3])
+```
+```{r echo=FALSE}
+print(B2.err)
+```
+### Wartości statystyki **t**
+Dla współczynników B~0~, B~1~, B~2~. 
+```{r}
+B0.t<-B0/B0.err
+B1.t<-B1/B1.err
+B2.t<-B2/B2.err
+```
+```{r echo=FALSE}
+paste(c('Intercept', 'wiek', 'przebieg'), c(B0.t, B1.t, B2.t), sep = ': ', collapse = '; ')
+```
+**H~0~**: _nie ma zależności pomiędzy predyktorem a zmienną objaśnianą; B~i~ = 0_.  
+Przyjęty poziom istotności: **5%**. 
+```{r}
+alpha<-1-.05/2                          # test obustronny
+tValue<-qt(alpha, df, lower.tail=TRUE)  # kwatyl rozkładu t-Studenta
+```
+Moduł wartości brzegowej obszaru krytycznego wynosi zatem:
+```{r echo=FALSE}
+print(tValue)
+```
+**p-wartości**
+```{r echo=FALSE}
+B0.t.pr <- format(signif(2*pt(abs(B0.t), df, lower.tail=FALSE) ,3))
+B1.t.pr <- format(signif(2*pt(abs(B1.t), df, lower.tail=FALSE) ,3))
+B2.t.pr <- format(signif(2*pt(abs(B2.t), df, lower.tail=FALSE) ,3))
+```
+| Współczynnik   | W obszarze krytycznym 5%?  | p-wartość                                    |
+| ---------------|:--------------------------:| --------------------------------------------:|
+| B~0~ Intercept | `r abs(B0.t)>tValue`      | Pr(>\|`r signif(B0.t, 4)`\|)=**`r B0.t.pr`** |
+| B~1~ wiek      | `r abs(B1.t)>tValue`      | Pr(>\|`r signif(B1.t, 4)`\|)=**`r B1.t.pr`** |
+| B~2~ cena      | `r abs(B2.t)>tValue`      | Pr(>\|`r signif(B2.t, 4)`\|)=**`r B2.t.pr`** |
+```{r}
+```
+## Przedziały ufności współczynników modelu
+Poziom ufności ciągle **95%**.
+```{r}
+tValues<-qt(c(1-alpha, alpha), df)
+B0.conf<-B0+B0.err*tValues
+B1.conf<-B1+B1.err*tValues
+B2.conf<-B2+B2.err*tValues
+```
+```{r echo=FALSE}
+cat(paste(c('Intercept', 'wiek', 'przebieg'), c(paste('[', paste(B0.conf, collapse='; '), ']', sep=''), paste('[', paste(B1.conf, collapse='; '), ']', sep=''), paste('[', paste(B2.conf, collapse='; '), ']', sep='')), sep = ': ', collapse = '\n'))
+```
+## Przedział ufności wyestymowanych wartości modelu
+Poziom istotności **5%**
+```{r}
+cena.est.conf<-data.frame(cena.est)
+for (i in indices) {
+  C<-c(1, wiek[i], przebieg[i])
+  delta<-sqrt(drop(t(C)%*%Sigma%*%C))
+  interval<-cena.est[i]+tValues*delta
+  cena.est.conf$lwr[i]<-interval[1]
+  cena.est.conf$upr[i]<-interval[2]
+}
+```
+```{r echo=FALSE}
+print(cena.est.conf)
+```
+# Prognoza punktowa i błąd ex-ante
+## Wariancja prognozy
+$\begin{aligned}
+S^2_\tau=S^2+S^2\cdot\left(\frac{1}{n}+\frac{(x_\tau-\bar{x})^2}{\sum_{i=1}^n(x_i-\bar{x})^2}\right)=
+\end{aligned}\\
+\begin{aligned}
+=S^2\cdot\left(1+\frac{1}{n}+\frac{(x_\tau-\bar{x})^2}{\sum_{i=1}^n(x_i-\bar{x})^2}\right)=
+\end{aligned}\\
+\begin{aligned}
+=S^2\cdot\left(1+\frac{\sum_{i=1}^nx_i^2+nx_\tau^2-2x_\tau\sum_{i=1}^nx_i}{n\sum_{i=1}^nx_i^2-(\sum_{i=1}^nx_i)^2}\right)
+\end{aligned}$  
+$\hat{\Sigma}$ - estymator macierzy kowariancji estymatora metody najmniejszych kwadratów  
+$C$ - wektor wartości nowej obserwacji (do kombinacji liniowej z modelem regresji)  
+Standardowy błąd obserwacji:  
+$\begin{aligned}
+\delta_\tau=S\sqrt{\frac{1}{n}+\frac{(x_\tau-\bar{x})^2}{\sum_{i=1}^n(x_i-\bar{x})^2}}=\sqrt{C^T\hat{\Sigma}C}=\sqrt{\delta_\tau^2}
+\end{aligned}$
+```{r}
+C<-c(1, new.car$wiek, new.car$przebieg)
+est.var<-drop(t(C)%*%Sigma%*%C)          # to samo co est.var<-drop(C%*%Sigma%*%C)
+```
+```{r echo=FALSE}
+print(est.var)
+```
+## Błąd ex-ante
+Błąd prognozy punktowej:  
+$\begin{aligned}
+S_\tau=\sqrt{S^2+\delta_\tau^2}=\sqrt{S^2+C^T\hat{\Sigma}C}
+\end{aligned}$
+```{r}
+exAnte<-sqrt(S2+est.var)
+```
+```{r echo=FALSE}
+print(exAnte)
+```
+## Względny błąd ex-ante
+Względny błąd prognozy punktowej:  
+$\begin{aligned}
+\eta_\tau=\frac{S_\tau}{|\hat{y_\tau}|}\cdot100\%
+\end{aligned}$
+```{r}
+exAnte.rel<-exAnte/abs(est.fnc(C[2], C[3]))
+```
+```{r echo=FALSE}
+print(exAnte.rel)
+```
+## Przedział ufności prognozy
+```{r}
+result.conf<-result+exAnte*tValues
+```
+```{r echo=FALSE}
+print(result.conf)
+```
+# Wykorzystanie pakietu `stats`
+Funkcja `lm` z pakietu `stats` (będąca przeciążeniem funkcji `glm` z tego samego pakietu) pozwala na stworzenie modelu regresji liniowej z zastosowaniem _formuł_.
+```{r}
+est<-lm(cena~wiek+przebieg)
+```
+Współczynniki modelu.
+```{r}
+est$coefficients  #to samo co coefficients(est)
+```
+Podsumowanie modelu.
+```{r}
+summary(est)
+```
+Przedziały ufności współczynników modelu (ang. _confidence intervals_).
+```{r}
+confint(est)
+```
+Przedziały ufności wyestymowanych wartości modelu (ang. _narrow intervals_).
+```{r}
+predict(est, interval="confidence", level=.95)
+```
+Predykcja z zadanym poziomem tolerancji (ang. _wide intervals_).
+```{r}
+pred<-predict(est, newdata=new.car, se.fit=TRUE, level=.95, interval="prediction")  # błąd.obserwacji=TRUE
+```
+```{r echo=FALSE}
+print(pred)
+```
+Błąd ex-ante (wariancja modelu + wariancja obserwacji).
+```{r}
+signif(sqrt(pred$residual.scale^2+pred$se.fit**2), 4)
+```
+# Zmienne skorelowane
+```{r eval=FALSE}
+summary(lm(cena~wiek*przebieg))
+```
+Alternatywnie.
+```{r eval=FALSE}
+summary(lm(cena~wiek+przebieg+wiek:przebieg))
+```
+```{r echo=FALSE}
+summary(lm(cena~wiek*przebieg))
+```
+# Wizualizacja
+```{r eval=FALSE}
+library(scatterplot3d)
+s3d<-scatterplot3d(x=wiek, y=przebieg, z=cena, angle=55, highlight.3d=T, scale.y=0.8)
+s3d$plane3d(est)
+residual3d<-function(x, y, z, residual){
+  s3d$points3d(x=x, y=y, z=z-residual, type='p', lwd=1, pch=5, col=3)
+  s3d$points3d(x=c(x, x), y=c(y, y), z=c(z-residual, z), type='l', lwd=1, col='dark green')
+}
+for (i in indices) {
+  residual3d(wiek[i], przebieg[i], cena[i], est$residuals[i])
+}
+# Predykcja z zadanym poziomem tolerancji (ang. wide intervals).
+s3d$points3d(x=new.car$wiek, y=new.car$przebieg, z=pred$fit[,'fit'], lwd=1, pch=21, bg=8, col=2)
+s3d$points3d(x=rep(new.car$wiek, 2), y=rep(new.car$przebieg, 2), z=pred$fit[,2:3], lwd=1, type='l', col=2)
+```
+```{r echo=FALSE}
+library(scatterplot3d)
+s3d<-scatterplot3d(x=wiek, y=przebieg, z=cena, angle=55, highlight.3d=T, scale.y=0.8)
+s3d$plane3d(est)
+residual3d<-function(x, y, z, residual){
+  s3d$points3d(x=x, y=y, z=z-residual, type='p', lwd=1, pch=5, col=3)
+  s3d$points3d(x=c(x, x), y=c(y, y), z=c(z-residual, z), type='l', lwd=1, col='dark green')
+}
+for (i in indices) {
+  residual3d(wiek[i], przebieg[i], cena[i], est$residuals[i])
+}
+# Predykcja z zadanym poziomem tolerancji (ang. wide intervals).
+s3d$points3d(x=new.car$wiek, y=new.car$przebieg, z=pred$fit[,'fit'], lwd=1, pch=21, bg=8, col=2)
+s3d$points3d(x=rep(new.car$wiek, 2), y=rep(new.car$przebieg, 2), z=pred$fit[,2:3], lwd=1, type='l', col=2)
+```
+## Przedziały ufności (osobny przykład)
+```{r}
+x<-1:7
+y<-c(8, 13, 14, 17, 18, 20, 22)
+est<-lm(y~x)
+```
+```{r echo=FALSE}
+print(summary(est))
+```
+Przedziały ufności.
+```{r}
+confint(est)  # to samo co confint(est, level=.95))
+```
+t-statystyka, stopni swobody: `r df.residual(est)`.
+```{r eval=FALSE}
+res<-signif(residuals(est), 3)
+pre<-predict(est, level=.99, interval="confidence")
+plot(x, y)
+abline(est)
+segments(x, y, x, pre[,"fit"], col="red")
+library(MASS)
+library(calibrate)
+textxy(x, y, res, cex=0.8)
+# Przedziały ufności (ang. narrow intervals)
+# 99%
+lines(x, pre[,2], col=8)
+lines(x, pre[,3], col=8)
+# 95%
+pre<-predict(est, level=0.95, interval="confidence")
+lines(est$model[["x"]], pre[,2], col=5)
+lines(est$model[["x"]], pre[,3], col=5)
+# Predykcja z zadanym poziomem tolerancji (ang. wide intervals)
+# 99%
+result<-predict(est, newdata=data.frame(x=c(4.5)), level=.99, interval="prediction")
+segments(4.5, result[,"lwr"], 4.5, result[,"upr"], col=8, lwd=5)
+textxy(4.5, result[,"lwr"], round(result[,"lwr"], 2), cex=0.85, col=8)
+textxy(4.5, result[,"upr"], round(result[,"upr"], 2), cex=0.85, col=8)
+# 95%
+result<-predict(est, newdata=data.frame(x=c(4.5)), level=.95, interval="prediction")
+segments(4.5, result[,"lwr"], 4.5, result[,"upr"], col=5, lwd=2)
+textxy(4.5, result[,"lwr"], round(result[,"lwr"], 2), cex=0.85, col=5)
+textxy(4.5, result[,"upr"], round(result[,"upr"], 2), cex=0.85, col=5)
+points(4.5, result[,"fit"], pch=23, col="darkgreen", bg="green")
+```
+```{r echo=FALSE}
+res<-signif(residuals(est), 3)
+pre<-predict(est, level=.99, interval="confidence")
+plot(x, y)
+abline(est)
+segments(x, y, x, pre[,"fit"], col="red")
+library(MASS)
+library(calibrate)
+textxy(x, y, res, cex=0.8)
+# Przedziały ufności (ang. narrow intervals)
+# 99%
+lines(x, pre[,2], col=8)
+lines(x, pre[,3], col=8)
+# 95%
+pre<-predict(est, level=0.95, interval="confidence")
+lines(est$model[["x"]], pre[,2], col=5)
+lines(est$model[["x"]], pre[,3], col=5)
+# Predykcja z zadanym poziomem tolerancji (ang. wide intervals)
+# 99%
+result<-predict(est, newdata=data.frame(x=c(4.5)), level=.99, interval="prediction")
+segments(4.5, result[,"lwr"], 4.5, result[,"upr"], col=8, lwd=5)
+textxy(4.5, result[,"lwr"], round(result[,"lwr"], 2), cex=0.85, col=8)
+textxy(4.5, result[,"upr"], round(result[,"upr"], 2), cex=0.85, col=8)
+# 95%
+result<-predict(est, newdata=data.frame(x=c(4.5)), level=.95, interval="prediction")
+segments(4.5, result[,"lwr"], 4.5, result[,"upr"], col=5, lwd=2)
+textxy(4.5, result[,"lwr"], round(result[,"lwr"], 2), cex=0.85, col=5)
+textxy(4.5, result[,"upr"], round(result[,"upr"], 2), cex=0.85, col=5)
+points(4.5, result[,"fit"], pch=23, col="darkgreen", bg="green")
+```

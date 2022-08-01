@@ -1,0 +1,195 @@
+---
+title: "Bayesian Classifier"
+author: "Krzysztof Mierzejewski"
+date: "01-04-2018"
+output:
+  html_notebook:
+    self_contained: true
+    code_folding: show
+    df_print: paged
+    number_sections: true
+    toc: true
+    toc_depth: 2
+    toc_float:
+      collapsed: true
+      smooth_scroll: true
+---
+# Wstęp teoretyczny
+## Twierdzenie Bayesa
+$P(A\cap B)=P(A\mid B)\cdot P(B)$; jeżeli $A$ i $B$ są niezależne, to $P(A\cap B)=P(A)\cdot P(B)$  
+$P(A\cap B)=P(B\mid A)\cdot P(A) \rightarrow P(A\mid B)\cdot P(B)=P(B\mid A)\cdot P(A)$
+
+$x=(x_1, \ldots, x_n)$ – wektor wartości niezależnych predyktorów  
+$C_k$ – klasa, wartość zmiennej zależnej  
+$p(C_k\mid {x_1, \ldots, x_n})$ – prawdopodobieństwo, że obserwacja $x$ należy do klasy $C_k$  
+Z twierdzenie Bayesa: $p(C_k\mid x)=\frac{p(C_k)\cdot p(x\mid C_k)}{p(x)}$  
+$posteriori=\frac{priori\cdot wiarogodność}{dowód}$; ang. _$posterior=\frac{prior\cdot likelihood}{evidence}$_
+
+## Naiwny Klasyfikator Bayesa
+licznik: $p(C_k)\cdot p(x\mid C_k)=p(x_1, \ldots, x_n, C_k)=$^[Rozpisanie łącznego / wspólnego (ang. _joint_) rozkładu prawdopodobieństwa zmiennych losowych przy użyciu [**reguły łańcuchowej**](https://en.wikipedia.org/wiki/Chain_rule_(probability)) (ang. _chain rule_)]  
+$\begin{aligned}
+=p(x_1\mid x_2, \ldots, x_n, C_k)\cdot p(x_2\mid x_3, \ldots, C_k)\cdot\ldots\cdot p(x_{n-1}\mid x_n, C_k)\cdot p(x_n\mid C_k)\cdot p(C_k)
+\end{aligned}$
+
+**Naiwność** – założenie niezależności wszystkich predyktorów pod warunkiem $C_k$
+
+$\begin{aligned}
+p(x_i\mid x_{i+1}, \ldots, x_n, C_k)=p(x_i\mid C_k)
+\end{aligned}$  
+licznik: $p(C_k)\cdot\prod_{i=1}^n{p(x_i\mid C_k)}$  
+mianownik: $p(x)=\sum_k{p(C_k)\cdotp(x\mid C_k)}$ jest stały dla $x$ i dlatego pomijany w poniższej formule
+
+***
+\[\hat{y}=\underset{k}{\operatorname{arg\,max}}\left(p(C_k)\cdot\prod_{i=1}^n {p(x_i\mid C_k)}\right)\]
+
+## Gaussowski Naiwny Klasyfikator Bayesa
+* założenie rozkładu Gaussa dla predyktorów o wartościach niedyskretnych
+* dla każdej klasy wyznaczana jest średnia $\mu_k$ oraz wariancja $\sigma_k^2$
+
+Dla nowej obserwacji $\nu$:
+$p(x=\nu\mid C_k)=\frac{1}{\sqrt{2\pi \sigma_k^2}}e^{-\frac{(\nu-\mu_k)^2}{2\sigma_k^2}}$
+
+# Naiwny Klasyfikator Bayesowski
+## Załadowanie danych
+Wczytanie niezbędnych pakietów.
+```{r message=FALSE}
+library(e1071)
+library(caret)
+```
+Ustawienie ziarna generatora liczb pseudolosowych.
+```{r}
+set.seed(NULL)
+```
+Wczytanie zbioru danych.
+<center>![](data:image/jpeg;base64,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)</center>
+Wszystkie kolumny przyjmują wartości nominalne. Opis zbioru w pliku `/usr/miswdm/house-votes-84.names` oraz pod adresem [Congressional Voting Records Data Set](https://archive.ics.uci.edu/ml/datasets/congressional+voting+records).
+```{r}
+data<-read.table('/usr/miswdm/house-votes-84.data', sep=',', header=F, na.strings='?')
+colnames(data)<-c(
+  'Class',
+  'handicapped.infants',
+  'water.project.cost.sharing',
+  'adoption.of.the.budget.resolution',
+  'physician.fee.freeze',
+  'el.salvador.aid',
+  'religious.groups.in.schools',
+  'anti.satellite.test.ban',
+  'aid.to.nicaraguan.contras',
+  'mx.missile',
+  'immigration',
+  'synfuels.corporation.cutback',
+  'education.spending',
+  'superfund.right.to.sue',
+  'crime',
+  'duty.free.exports',
+  'export.administration.act.south.africa')
+```
+Usunięcie rekordów niezawierających danych w przynajmniej jednej kolumnie (wartość `NA`).
+```{r}
+data<-data[complete.cases(data),]
+```
+Podział na zbiór uczący i walidujący.
+```{r}
+partition<-createDataPartition(data$Class, p=.75, list=F)
+data.train<-data[partition,]
+data.test<-data[-partition,]
+```
+## Stworzenie modelu naiwnego klasyfikatora Bayesowskiego
+```{r}
+model<-naiveBayes(Class~., data=data.train)
+```
+Tabele prawdopodobieństw warunkowych (ang. _Conditional Probability Tables_).
+```{r}
+head(model$tables, 3)
+```
+## Walidacja modelu
+Macierz pomyłek.
+```{r tidy=TRUE}
+data.pred<-predict(model, data.test, type='class')
+cm<-table(data.pred, data.test$Class, dnn=c("Predicted","Actual"))
+```
+```{r echo=FALSE}
+print(cm)
+```
+* Trafność (ang. _accuracy_):    
+**`r sprintf('%.2f%%', 100 * sum(diag(cm)) / sum(cm))`**
+* Precyzja (ang. _precision_), klasa=`democrat`:    
+**`r sprintf('%.2f%%', 100 * cm['democrat','democrat'] / sum(cm['democrat',]))`**
+* Precyzja (ang. _precision_), klasa=`republican`:    
+**`r sprintf('%.2f%%', 100 * cm['republican','republican'] / sum(cm['republican',]))`**
+* Czułość (ang. _recall_), klasa=`democrat`:    
+**`r sprintf('%.2f%%', 100 * cm['democrat','democrat'] / sum(cm[,'democrat']))`**
+* Czułość (ang. _recall_), klasa=`republican`:    
+**`r sprintf('%.2f%%', 100 * cm['republican','republican'] / sum(cm[,'republican']))`**
+* F-miara (ang. _F1 score_), klasa=`democrat`:    
+**`r sprintf('%.2f%%', 200 * cm['democrat','democrat'] / (cm[1]+sum(cm[-4])))`**
+* F-miara (ang. _F1 score_), klasa=`republican`:    
+**`r sprintf('%.2f%%', 200 * cm['republican','republican'] / (cm[4]+sum(cm[-1])))`**
+
+# Klasyfikacja wieloklasowa
+## Załadowanie danych
+Dokładny opis dostępny pod adresem [Vertebral Column Data Set](http://archive.ics.uci.edu/ml/datasets/vertebral+column).
+```{r}
+vertebral<-read.table('/usr/miswdm/column_3C.dat')
+colnames(vertebral)<-c(
+  'pelvic incidence',
+  'pelvic tilt',
+  'lumbar lordosis angle',
+  'sacral slope',
+  'pelvic radius',
+  'grade of spondylolisthesis',
+  'class')
+```
+Klasy (kolumna `class`):
+
+* __DH__ - Disk Hernia; 60 obserwacji.
+* __NO__ - Normal; 100 obserwacji.
+* __SL__ - Spondylolisthesis; 150 obserwacji.
+
+## Stworzenie modelu naiwnego klasyfikatora Bayesowskiego
+Podział na zbiór trenujący i walidujący.
+```{r}
+partition<-createDataPartition(vertebral$class, p=.75, list=FALSE)
+vertebral.train<-vertebral[partition,]
+vertebral.test<-vertebral[-partition,]
+```
+Wytrenowanie modelu.
+```{r}
+model<-naiveBayes(vertebral.train[,-7], vertebral.train$class)
+```
+Alternatywnie.
+```{r eval=FALSE}
+model<-naiveBayes(class~., data=vertebral.train)
+```
+```{r echo=FALSE, tidy=TRUE}
+head(model$tables, 3)
+```
+## Walidacja modelu
+### Macierz pomyłek
+```{r}
+vertebral.pred<-predict(model, vertebral.test, type='class')
+tt<-table(Predicted=vertebral.pred, Actual=vertebral.test$class)
+```
+```{r echo=FALSE}
+print(tt)
+```
+### Współczynniki klasyfikacji
+Obliczenia pomocnicze.
+```{r}
+diag<-diag(tt)
+rowsums<-apply(tt, 1, sum)
+colsums<-apply(tt, 2, sum)
+```
+```{r echo=FALSE, message=FALSE}
+precision = diag / rowsums
+recall = diag / colsums
+f1 = 2 * precision * recall / (precision + recall)
+```
+* Trafność (ang. _accuracy_):    
+**`r sprintf('%.2f%%', 100 * sum(diag) / sum(tt))`**
+* Średnia precyzja (ang. _mean precision_):    
+**`r sprintf('%.2f%%', 100 * mean(precision))`**
+* Średnia czułość (ang. _mean recall_):    
+**`r sprintf('%.2f%%', 100 * mean(recall))`**
+* Średnia F-miara (ang. _mean F1 score_):    
+**`r sprintf('%.2f%%', 100 * mean(f1))`**
